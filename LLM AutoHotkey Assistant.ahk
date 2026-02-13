@@ -5,7 +5,7 @@
 ; Hotkeys
 ; ----------------------------------------------------
 
-F12:: mainScriptHotkeyActions("showPromptMenu")
+^F12:: mainScriptHotkeyActions("showPromptMenu")
 ~^s:: mainScriptHotkeyActions("saveAndReloadScript")
 ~^w:: mainScriptHotkeyActions("closeWindows")
 
@@ -228,13 +228,13 @@ quickAPIHealthCheck() {
         if (ProcessExist(pid)) {
             ProcessClose(pid)
             TraySetIcon("icons\IconOff.ico")
-            MsgBox("API connectivity test timed out. The model may be unreachable or the Base URL may be invalid.", "API test failed", "48")
+            MsgBox("API connectivity test timed out. The model may be unreachable or the Base URL may be invalid.", "API test failed", "16")
             return
         }
 
         if !FileExist(tmpOut) {
             TraySetIcon("icons\IconOff.ico")
-            MsgBox("API test failed: no response file created.", "API test failed", "48")
+            MsgBox("API test failed: no response file created.", "API test failed", "16")
             return
         }
 
@@ -260,7 +260,7 @@ quickAPIHealthCheck() {
             rawContent := ""
             try rawContent := FileOpen(tmpOut, "r", "UTF-8").Read()
             TraySetIcon("icons\IconOff.ico")
-            MsgBox("API test failed. Error: " errDetail "`n`nResponse Content:`n" SubStr(rawContent, 1, 500) "`n`nYou can reset the configuration from the tray menu.", "API test failed", 48)
+            MsgBox("API test failed. Error: " errDetail "`n`nResponse Content:`n" SubStr(rawContent, 1, 500) "`n`nYou can reset the configuration from the tray menu.", "API test failed", 16)
         }
     } catch {
         ; silently ignore startup test errors
@@ -669,14 +669,14 @@ showHelpDialog() {
     helpText := "LLM AutoHotkey Assistant - Raccourcis Clavier (AZERTY)`n"
     helpText .= "================================================`n`n"
     helpText .= "RACCOURCIS PRINCIPAUX:`n"
-    helpText .= "  • F12               - Ouvrir le menu des prompts`n"
+    helpText .= "  • Ctrl+F12          - Ouvrir le menu des prompts`n"
     helpText .= "  • Ctrl+S            - Recharger le script (si édition)`n"
     helpText .= "  • Ctrl+W            - Fermer les fenêtres d'entrée`n"
     helpText .= "  • CapsLock + F12    - Suspendre/reprendre les raccourcis`n`n"
     helpText .= "CONSEILS D'UTILISATION:`n"
-    helpText .= "  1. Appuyez sur F12 pour ouvrir le menu`n"
+    helpText .= "  1. Appuyez sur Ctrl+F12 pour ouvrir le menu`n"
     helpText .= "  2. Cliquez sur un prompt pour l'utiliser`n"
-    helpText .= "  3. Copiez d'abord du texte, puis F12 → sélectionnez`n"
+    helpText .= "  3. Copiez d'abord du texte, puis Ctrl+F12 → sélectionnez`n"
     helpText .= "  4. Utilisez Options pour éditer les prompts`n`n"
     helpText .= "================================================`n"
     helpText .= "Clic-droit sur l'icône pour plus d'options!"
