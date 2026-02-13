@@ -293,11 +293,16 @@ sendRequestToLLM(&chatHistoryJSONRequest, initialRequest := false) {
         Exit
     }
 
-    ; Reset the PID as the process has completed
-    cURLPID := 0
-    manageState("cURL", "set", cURLPID)
-
     ; Read the output after the process has completed
+    if !FileExist(requestParams["cURLOutputFile"]) {
+        responseFromLLM := "**⛔ Error: Output file not found.**`n`nThe API request might have failed to create the response file. Check your Ollama server status or network connection."
+        manageState("cURL", "close")
+        startLoadingCursor(false)
+        CustomMessages.notifyResponseWindowState(CustomMessages.WM_RESPONSE_WINDOW_CLOSED,
+            requestParams["uniqueID"], responseWindow.hWnd, requestParams["mainScriptHiddenhWnd"])
+        MsgBox(responseFromLLM, "API Error", 16)
+        ExitApp
+    }
     JSONResponseFromLLM := FileOpen(requestParams["cURLOutputFile"], "r", "UTF-8").Read()
 
     ; Process the JSON response from the LLM API
