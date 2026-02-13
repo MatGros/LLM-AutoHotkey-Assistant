@@ -1,235 +1,311 @@
-#Requires AutoHotkey v2.0.18+
-#Include ..\Prompts.ahk
-#Include Dark_MsgBox.ahk ; Enables dark mode MsgBox and InputBox. Remove this if you want light mode MsgBox and InputBox
-#Include Dark_Menu.ahk ; Enables dark mode Menu. Remove this if you want light mode Menu
-#Include SystemThemeAwareToolTip.ahk ; Enables dark mode tooltips. Remove this if you want light mode tooltips
-#Include WebViewToo.ahk ; Allows for use of the WebView2 Framework within AHK to create Web-based GUIs
-#Include jsongo.v2.ahk ; For JSON parsing
-#Include AutoXYWH.ahk ; Enables auto-resizing of GUI controls. Does not include resizing of Response Window GUI elements, as it is handled by HTML and CSS
-#Include ToolTipEx.ahk ; Enables the tooltip to track the mouse cursor smoothly and permit the tooltip to be moved by dragging
-DetectHiddenWindows true ; Enables detection of hidden windows for inter-process communication
+#Requires AutoHotkey v2.0
 
 ; ----------------------------------------------------
-; Ollama Backend
+; Library includes
+; ----------------------------------------------------
+
+#Include "jsongo.v2.ahk"
+#Include "Promise.ahk"
+#Include "ComVar.ahk"
+#Include "AutoXYWH.ahk"
+#Include "SystemThemeAwareToolTip.ahk"
+#Include "ToolTipEx.ahk"
+#Include "WebViewToo.ahk"
+#Include "Dark_Menu.ahk"
+#Include "Dark_MsgBox.ahk"
+
+; NOTE: "Response Window.ahk" is intentionally NOT included here.
+; It is launched as a separate process via Run() and reads A_Args[1].
+
+#Include "..\Prompts.ahk"
+
+; ----------------------------------------------------
+; Class: OllamaBackend
+; Handles API communication with Ollama-compatible backends.
 ; ----------------------------------------------------
 
 class OllamaBackend {
-    ; Use {1} for URL, {2} for API Key (optional), {3} for Input File, {4} for Output File
-    static cURLCommand :=
-        'cURL.exe -s -X POST "{1}/api/chat" '
-        . '{2} '
-        . '-H "Content-Type: application/json" '
-        . '-d @"{3}" '
-        . '-o "{4}"'
+    baseURL := ""
+    apiKey := ""
 
-    __New(BaseURL, APIKey := "") {
-        this.BaseURL := RTrim(BaseURL, "/")
-        this.APIKey := APIKey
+    __New(url, key := "") {
+        this.baseURL := url
+        this.apiKey := key
     }
 
-    createJSONRequest(APIModel, systemPrompt, userPrompt) {
-        requestObj := {}
-        requestObj.model := APIModel
-        ; Hack: AHK v2 stores "false" as 0 (integer), which serializes to 0.
-        ; Ollama strictly requires a boolean false. We use a placeholder string and replace it after.
-        requestObj.stream := "___FALSE___"  
-        requestObj.messages := [{
-            role: "system",
-            content: systemPrompt
-        }, {
-            role: "user",
-            content: userPrompt
-        }]
-        json := jsongo.Stringify(requestObj)
-        return StrReplace(json, '"___FALSE___"', 'false')
+    /**
+     * Creates a JSON request string for the Ollama /api/chat endpoint.
+     * @param {String} model - Full model name (e.g. "ollama/gemma3:4b")
+     * @param {String} system - System prompt
+     * @param {String} prompt - User prompt
+     * @param {Boolean} stream - Whether to enable streaming (default: false)
+     * @returns {String} JSON string
+     */
+    createJSONRequest(model, system, prompt, stream := false) {
+        ; AHK v2 represents true/false as 1/0 (integers).
+        ; jsongo serializes them as numbers, but Ollama's Go API
+        ; requires a JSON boolean for "stream". We use a placeholder
+        ; string and replace it after serialization.
+        streamPlaceholder := stream ? "__JSON_TRUE__" : "__JSON_FALSE__"
+        obj := {
+            model: model,
+            messages: [{ role: "system", content: system }, { role: "user", content: prompt }],
+            stream: streamPlaceholder
+        }
+        result := jsongo.Stringify(obj)
+        result := StrReplace(result, '"__JSON_TRUE__"', "true")
+        result := StrReplace(result, '"__JSON_FALSE__"', "false")
+        return result
     }
 
-    extractJSONResponse(var) {
-        ; Ollama returns { "message": { "role": "assistant", "content": "..." }, "done": true, ... }
-        if (var.Has("message") && var["message"].Has("content")) {
-            response := var["message"]["content"]
-        } else if (var.Has("response")) {
-             ; Fallback for /api/generate endpoint if used
-            response := var["response"]
-        } else if (var.Has("choices") && var["choices"][1].Has("message") && var["choices"][1]["message"].Has("content")) {
-             ; Fallback for OpenAI compatible endpoint
-            response := var["choices"][1]["message"]["content"]
+    /**
+     * Builds a cURL command string for the Ollama API.
+     * @param {String} requestFile - Path to the JSON request file
+     * @param {String} outputFile - Path where the response will be written
+     * @returns {String} Complete cURL command
+     */
+    buildcURLCommand(requestFile, outputFile) {
+        url := this.baseURL . "/api/chat"
+        cmd := 'curl.exe -s -X POST "' url '"'
+        if (this.apiKey != "") {
+            cmd .= ' -H "Authorization: Bearer ' this.apiKey '"'
+        }
+        cmd .= ' -H "Content-Type: application/json"'
+        cmd .= ' -d @"' requestFile '"'
+        cmd .= ' -o "' outputFile '"'
+        return cmd
+    }
+
+    /**
+     * Extracts the response text from a parsed API JSON response.
+     * @param {Map} parsedVar - Parsed JSON response from Ollama
+     * @returns {Object} Object with .response and .error properties
+     */
+    extractJSONResponse(parsedVar) {
+        result := { response: "", error: "" }
+        if (Type(parsedVar) = "Map") {
+            if (parsedVar.Has("error")) {
+                result.error := parsedVar["error"]
+                return result
+            }
+            if (parsedVar.Has("message") && parsedVar["message"].Has("content")) {
+                result.response := parsedVar["message"]["content"]
+            }
         } else {
-            response := ""
-        }
-        
-        model := var.Has("model") ? var["model"] : "unknown"
-        return {
-            response: response,
-            model: model
-        }
-    }
-
-    extractErrorResponse(var) {
-        if (var.Has("error")) {
-            return {
-                error: var["error"],
-                code: "Erreur Ollama"
+            if (parsedVar.HasProp("error")) {
+                result.error := parsedVar.error
+                return result
+            }
+            if (parsedVar.HasProp("message") && parsedVar.message.HasProp("content")) {
+                result.response := parsedVar.message.content
             }
         }
-        return {
-            error: "Erreur inconnue",
-            code: 0
+        return result
+    }
+
+    /**
+     * Appends a message to the chat history JSON and writes it to the file.
+     * @param {String} role - "user" or "assistant"
+     * @param {String} content - Message content
+     * @param {VarRef} jsonStr - Reference to the JSON string (updated in-place)
+     * @param {String} filePath - Path to the JSON file to write
+     */
+    appendToChatHistory(role, content, &jsonStr, filePath) {
+        parsed := jsongo.Parse(jsonStr)
+        if (Type(parsed) = "Map") {
+            parsed["messages"].Push(Map("role", role, "content", content))
+        } else {
+            parsed.messages.Push({ role: role, content: content })
         }
+        jsonStr := jsongo.Stringify(parsed)
+        FileOpen(filePath, "w", "UTF-8-RAW").Write(jsonStr)
     }
 
-    appendToChatHistory(role, message, &chatHistoryJSONRequest, chatHistoryJSONRequestFile) {
-        obj := jsongo.Parse(chatHistoryJSONRequest)
-        obj["messages"].Push({
-            role: role,
-            content: message
-        })
-        chatHistoryJSONRequest := jsongo.Stringify(obj)
-        FileOpen(chatHistoryJSONRequestFile, "w", "UTF-8-RAW").Write(chatHistoryJSONRequest)
-    }
-
-    getMessages(obj) {
-        messages := []
-        if (obj.Has("messages")) {
-            for i in obj["messages"] {
-                messages.Push({
-                    role: i["role"],
-                    content: i["content"]
-                })
+    /**
+     * Removes the last assistant message from the chat history (for Retry).
+     * @param {VarRef} jsonStr - Reference to the JSON string (updated in-place)
+     */
+    removeLastAssistantMessage(&jsonStr) {
+        parsed := jsongo.Parse(jsonStr)
+        if (Type(parsed) = "Map") {
+            messages := parsed["messages"]
+            if (messages.Length > 0) {
+                lastMsg := messages[messages.Length]
+                if (Type(lastMsg) = "Map" && lastMsg.Has("role") && lastMsg["role"] = "assistant") {
+                    messages.Pop()
+                } else if (lastMsg.HasProp("role") && lastMsg.role = "assistant") {
+                    messages.Pop()
+                }
+            }
+        } else {
+            messages := parsed.messages
+            if (messages.Length > 0 && messages[messages.Length].role = "assistant") {
+                messages.Pop()
             }
         }
-        return messages
-    }
-
-    removeLastAssistantMessage(&chatHistoryJSONRequest) {
-        obj := jsongo.Parse(chatHistoryJSONRequest)
-        if (obj.Has("messages")) {
-            messagesArray := obj["messages"]
-            lastIndex := messagesArray.Length
-            if (lastIndex > 0 && messagesArray[lastIndex]["role"] = "assistant") {
-                messagesArray.RemoveAt(lastIndex)
-            }
-            chatHistoryJSONRequest := jsongo.Stringify(obj)
-        }
-    }
-
-    buildcURLCommand(chatHistoryJSONRequestFile, cURLOutputFile) {
-        authHeader := ""
-        if (this.APIKey != "") {
-            authHeader := '-H "Authorization: Bearer ' . this.APIKey . '"'
-        }
-        return Format(OllamaBackend.cURLCommand, this.BaseURL, authHeader, chatHistoryJSONRequestFile, cURLOutputFile)
+        jsonStr := jsongo.Stringify(parsed)
     }
 }
 
 ; ----------------------------------------------------
-; Input Window
+; Class: InputWindow
+; GUI wrapper for text input with Send/Cancel buttons.
+; Used for custom prompts and chat messages.
 ; ----------------------------------------------------
 
 class InputWindow {
-    __New(windowTitle, skipConfirmation := false) {
-        this.inputWindowSkipConfirmation := skipConfirmation
+    guiObj := ""
+    EditControl := ""
+    _sendCallback := ""
+    _skipConfirmation := false
+    _title := ""
 
-        ; Create Input Window
-        this.guiObj := Gui("Resize", windowTitle)
-        this.guiObj.OnEvent("Close", this.closeButtonAction.Bind(this))
-        this.guiObj.OnEvent("Escape", this.closeButtonAction.Bind(this))
-        this.guiObj.OnEvent("Size", this.resizeAction.Bind(this))
-        this.guiObj.BackColor := "0x212529"
-        this.guiObj.SetFont("s14 cWhite", "Cambria")
+    /**
+     * @param {String} title - Window title
+     * @param {Boolean} skipConfirmation - If true, skips close confirmation
+     */
+    __New(title, skipConfirmation := false) {
+        this._title := title
+        this._skipConfirmation := skipConfirmation
 
-        ; Add controls
-        this.EditControl := this.guiObj.Add("Edit", "x20 y+5 w500 h250 Background0x212529")
-        this.SendButton := this.guiObj.Add("Button", "x240 y+10 w80", "Envoyer")
+        this.guiObj := Gui("+AlwaysOnTop +Resize +MinSize400x210", title)
+        this.guiObj.SetFont("s10", "Segoe UI")
+        this.guiObj.OnEvent("Close", (*) => this.closeButtonAction())
+        this.guiObj.OnEvent("Size", this._onResize.Bind(this))
 
-        ; Apply dark mode to title bar
-        ; Reference: https://www.autohotkey.com/boards/viewtopic.php?p=422034#p422034
-        DllCall("Dwmapi\DwmSetWindowAttribute", "ptr", this.guiObj.hWnd, "int", 20, "int*", true, "int", 4)
+        this.EditControl := this.guiObj.Add("Edit", "x10 y10 w380 h150 Multi WantReturn vUserInput")
 
-        ; Apply dark mode to Send button and Edit control
-        for ctrl in [this.SendButton, this.EditControl] {
-            DllCall("uxtheme\SetWindowTheme", "ptr", ctrl.hWnd, "str", "DarkMode_Explorer", "ptr", 0)
-        }
+        this._sendBtn := this.guiObj.Add("Button", "x10 y170 w185 h30 Default", "Envoyer")
+        this._sendBtn.OnEvent("Click", (*) => this._onSend())
+
+        this._cancelBtn := this.guiObj.Add("Button", "x205 y170 w185 h30", "Annuler")
+        this._cancelBtn.OnEvent("Click", (*) => this.closeButtonAction())
     }
 
-    showInputWindow(message := "", title := unset, windowID := unset) {
-        this.EditControl.Value := message
-        if IsSet(title) {
-            this.guiObj.Title := title
-        }
-
-        this.EditControl.Focus()
-        this.guiObj.Show("AutoSize")
-        if IsSet(windowID) {
-            ControlSend("^{End}", "Edit1", windowID)
-        }
+    /**
+     * Registers the callback function for the Send button.
+     * @param {Func} callback - Function to call when Send is clicked
+     */
+    sendButtonAction(callback) {
+        this._sendCallback := callback
     }
 
-    validateInputAndHide(*) {
-        if !this.EditControl.Value {
-            MsgBox "Veuillez entrer un message ou fermer la fenêtre.", "Aucun texte entré", "IconX"
+    _onSend(*) {
+        if (this._sendCallback)
+            this._sendCallback()
+    }
+
+    _onResize(guiObj, minMax, width, height) {
+        if (minMax = -1)
+            return
+        this.EditControl.Move(, , width - 20, height - 60)
+        this._sendBtn.Move(10, height - 40, (width - 30) // 2)
+        this._cancelBtn.Move(20 + (width - 30) // 2, height - 40, (width - 30) // 2)
+    }
+
+    /**
+     * Shows the input window.
+     * @param {String} initialMessage - Optional initial text for the edit field
+     * @param {String} windowTitle - Optional override for the window title
+     * @param {String} winTitle - Optional WinTitle to activate after showing
+     */
+    showInputWindow(initialMessage?, windowTitle?, winTitle?) {
+        if IsSet(initialMessage) && initialMessage != ""
+            this.EditControl.Value := initialMessage
+
+        if IsSet(windowTitle) && windowTitle != ""
+            this.guiObj.Title := windowTitle
+        else
+            this.guiObj.Title := this._title
+
+        this.guiObj.Show("w400 h210")
+
+        if IsSet(winTitle)
+            WinActivate(winTitle)
+    }
+
+    /**
+     * Validates that input is not empty, hides the window if valid.
+     * @returns {Boolean} true if input is valid
+     */
+    validateInputAndHide() {
+        if (Trim(this.EditControl.Value) = "") {
+            MsgBox("Veuillez entrer un message.", this.guiObj.Title, 48)
             return false
         }
-        this.guiObj.Hide
+        this.guiObj.Hide()
         return true
     }
 
-    sendButtonAction(functionToCall) {
-        this.SendButton.OnEvent("Click", functionToCall.Bind(this))
+    /**
+     * Closes the input window and clears the edit field.
+     */
+    closeButtonAction() {
+        this.EditControl.Value := ""
+        this.guiObj.Hide()
     }
 
-    closeButtonAction(*) {
-        response := MsgBox(Format('Fermer la fenêtre "{}" ?', this.guiObj.Title), this.guiObj.Title, 308)
-        yesResponses := Map("yes", true, "oui", true, "si", true, "sí", true, "sì", true, "ja", true, "sim", true, "да", true, "はい", true, "예", true, "是", true)
-        if (this.inputWindowSkipConfirmation || yesResponses.Has(StrLower(response))) {
-            this.EditControl.Value := ""
-            this.guiObj.Hide
-            return
-        }
-
-        return true
-    }
-
-    resizeAction(*) {
-        AutoXYWH("wh", this.EditControl)
-        AutoXYWH("x0.5 y", this.SendButton)
-    }
-
+    /**
+     * Sets the skip confirmation flag.
+     * @param {Boolean} value
+     */
     setSkipConfirmation(value) {
-        this.inputWindowSkipConfirmation := value
+        this._skipConfirmation := value
     }
 }
 
 ; ----------------------------------------------------
-; Custom messages
+; Class: CustomMessages
+; Inter-process communication between the main script
+; and Response Window sub-scripts via PostMessage.
 ; ----------------------------------------------------
 
 class CustomMessages {
-    static WM_RESPONSE_WINDOW_OPENED := 0x400 + 125
-    static WM_RESPONSE_WINDOW_CLOSED := 0x400 + 126
-    static WM_SEND_TO_ALL_MODELS := 0x400 + 127
-    static WM_RESPONSE_WINDOW_LOADING_START := 0x400 + 123
+    ; Custom window message constants (WM_USER + offset)
+    static WM_RESPONSE_WINDOW_LOADING_START  := 0x400 + 123
     static WM_RESPONSE_WINDOW_LOADING_FINISH := 0x400 + 124
+    static WM_RESPONSE_WINDOW_OPENED         := 0x400 + 125
+    static WM_RESPONSE_WINDOW_CLOSED         := 0x400 + 126
+    static WM_SEND_TO_ALL_MODELS             := 0x400 + 127
 
-    static registerHandlers(origin, handle) {
-        switch origin {
-            case "mainScript":
-                for msg in [this.WM_RESPONSE_WINDOW_OPENED, this.WM_RESPONSE_WINDOW_CLOSED, this.WM_RESPONSE_WINDOW_LOADING_START,
-                    this.WM_RESPONSE_WINDOW_LOADING_FINISH]
-                    OnMessage(msg, handle)
-
-            case "subScript": OnMessage(this.WM_SEND_TO_ALL_MODELS, handle)
+    /**
+     * Registers OnMessage handlers for inter-process communication.
+     * @param {String} scriptType - "mainScript" or "subScript"
+     * @param {Func} callback - Handler function (wParam, lParam, msg, hwnd)
+     *   - mainScript: receives OPENED, CLOSED, LOADING_START, LOADING_FINISH
+     *   - subScript: receives SEND_TO_ALL_MODELS
+     */
+    static registerHandlers(scriptType, callback) {
+        if (scriptType = "mainScript") {
+            OnMessage(this.WM_RESPONSE_WINDOW_OPENED, callback)
+            OnMessage(this.WM_RESPONSE_WINDOW_CLOSED, callback)
+            OnMessage(this.WM_RESPONSE_WINDOW_LOADING_START, callback)
+            OnMessage(this.WM_RESPONSE_WINDOW_LOADING_FINISH, callback)
+        } else if (scriptType = "subScript") {
+            OnMessage(this.WM_SEND_TO_ALL_MODELS, callback)
         }
     }
 
-    static notifyResponseWindowState(state, uniqueID, responseWindowhWnd := unset, mainScriptHiddenhWnd := unset) {
-        switch state {
-            case this.WM_RESPONSE_WINDOW_OPENED, this.WM_RESPONSE_WINDOW_CLOSED:
-                PostMessage(state, uniqueID, responseWindowhWnd, , "ahk_id " mainScriptHiddenhWnd)
-            case this.WM_SEND_TO_ALL_MODELS:
-                PostMessage(state, uniqueID, 0, , "ahk_id " responseWindowhWnd)
-            case this.WM_RESPONSE_WINDOW_LOADING_START, this.WM_RESPONSE_WINDOW_LOADING_FINISH:
-                PostMessage(state, uniqueID, 0, , "ahk_id " mainScriptHiddenhWnd)
+    /**
+     * Sends a state notification to another script via PostMessage.
+     * @param {Integer} msg - One of the WM_ constants
+     * @param {Integer} uniqueID - Unique identifier (sent as wParam)
+     * @param {Integer} hWnd - Source window handle (sent as lParam), or target if no targetHWnd
+     * @param {Integer} targetHWnd - Target window handle to send the message to
+     *
+     * Usage patterns:
+     *   From sub-script → main: notifyResponseWindowState(WM_..., uniqueID, responseHWnd, mainHWnd)
+     *   From main → sub-script: notifyResponseWindowState(WM_..., uniqueID, targetHWnd)
+     */
+    static notifyResponseWindowState(msg, uniqueID, hWnd := 0, targetHWnd := 0) {
+        try {
+            if (targetHWnd) {
+                ; 4-arg form: hWnd is lParam, targetHWnd is the recipient
+                PostMessage(msg, uniqueID, hWnd, , "ahk_id " targetHWnd)
+            } else {
+                ; 3-arg form: hWnd is the recipient, lParam is 0
+                PostMessage(msg, uniqueID, 0, , "ahk_id " hWnd)
+            }
         }
     }
 }

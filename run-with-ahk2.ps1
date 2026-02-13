@@ -111,20 +111,34 @@ Log "run-with-ahk2 invoked. Script='$ScriptPath' Verbose=$Verbose Tail=$Tail"
 Write-Host "Launching:`n  AHK: $ahkExe`n  Script: $ScriptPath" -ForegroundColor Cyan
 Log "Attempting launch. AHK='$ahkExe' Script='$ScriptPath'"
 
-# If an AutoHotkey process that runs this script already exists, inform the user
-$scriptFullPath = (Resolve-Path $ScriptPath).Path
-$existing = Get-Process -Name AutoHotkey64 -ErrorAction SilentlyContinue | Where-Object {
-    ($_).Path -eq $ahkExe -and (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)").CommandLine -match [regex]::Escape($scriptFullPath)
+# -------------------------------------------------------------------------
+# Cleanup: Kill any existing instances of the Main Script OR Response Window
+# -------------------------------------------------------------------------
+$targets = @("LLM AutoHotkey Assistant.ahk", "Response Window.ahk")
+Write-Host "Checking for existing instances..." -ForegroundColor Cyan
+
+$runningProcesses = Get-Process -Name AutoHotkey64, AutoHotkey -ErrorAction SilentlyContinue
+foreach ($proc in $runningProcesses) {
+    try {
+        $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)").CommandLine
+        if ($cmdLine) {
+            foreach ($t in $targets) {
+                if ($cmdLine -match [regex]::Escape($t)) {
+                     Write-Host "Found running instance of '$t' (PID: $($proc.Id)). Killing it..." -ForegroundColor Yellow
+                     Log "Killing found instance '$t' PID=$($proc.Id)"
+                     Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+                     break # Process killed, move to next process
+                }
+            }
+        }
+    } catch {
+        # Process might have closed in the meantime, ignore
+    }
 }
-if ($existing) {
-    Write-Host "A matching AutoHotkey process is already running (PID: $($existing.Id))." -ForegroundColor Yellow
-    Log "Already running PID=$($existing.Id)"
-    if ($Verbose) { Get-Process -Id $existing.Id | Format-List * }
-    exit 0
-}
+Start-Sleep -Milliseconds 500  # Wait for cleanup
 
 try {
-    $proc = Start-Process -FilePath $ahkExe -ArgumentList ('"' + $scriptFullPath + '"') -PassThru
+    $proc = Start-Process -FilePath $ahkExe -ArgumentList ('"' + $ScriptPath + '"') -PassThru
     Start-Sleep -Milliseconds 250
     if ($proc -and -not $proc.HasExited) {
         Write-Host "Started AHK (PID: $($proc.Id))." -ForegroundColor Green

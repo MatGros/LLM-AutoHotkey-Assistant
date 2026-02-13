@@ -14,7 +14,6 @@
  * @property {number} error_log        - Stores error messages when an error occurs and the .silent_error property is true
  */
 class jsongo {
-    #Requires AutoHotkey v2.0.11+
     static version := '1.1'
     
     ; === User Options ===

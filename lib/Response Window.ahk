@@ -51,6 +51,40 @@ subScriptHotkeyActions(action) {
 ; ----------------------------------------------------
 
 requestParams := jsongo.Parse(FileOpen(A_Args[1], "r", "UTF-8").Read())
+
+; ----------------------------------------------------
+; Debug logging system
+; ----------------------------------------------------
+
+DebugLog(msg) {
+    global requestParams
+    logFile := A_Temp "\ResponseWindow_Debug_" requestParams["uniqueID"] ".log"
+    timestamp := FormatTime(, "yyyy-MM-dd HH:mm:ss")
+    logLine := "[" timestamp "] " msg "`n"
+    try {
+        FileAppend(logLine, logFile, "UTF-8")
+    } catch {
+        ; Ignore write errors
+    }
+}
+
+; Create log file and show path
+logFilePath := A_Temp "\\ResponseWindow_Debug_" requestParams["uniqueID"] ".log"
+try {
+    FileDelete(logFilePath)  ; Clear previous log
+} catch {
+}
+
+DebugLog("=== Response Window Started ===")
+DebugLog("UniqueID: " requestParams["uniqueID"])
+DebugLog("Model: " requestParams["singleAPIModelName"])
+DebugLog("cURL Output File: " requestParams["cURLOutputFile"])
+DebugLog("Log file: " logFilePath)
+
+; Log location is available in log file if needed, removed tooltip as requested
+; ToolTip("Debug log: " logFilePath "`n`nThis will auto-close in 5 seconds", , , 20)
+; SetTimer(() => ToolTip(), -5000)
+
 startLoadingCursor(true)
 
 ; ----------------------------------------------------
@@ -74,9 +108,26 @@ responseWindow := WebViewToo(, , ,)
 responseWindow.OnEvent("Close", (*) => buttonClickAction("Close"))
 responseWindow.Load("..\Response Window resources\index.html")
 
+; Apply "Always On Top" style
+WinSetAlwaysOnTop(true, responseWindow.hWnd)
+
 ; Apply dark mode to title bar
 ; Reference: https://www.autohotkey.com/boards/viewtopic.php?p=422034#p422034
 DllCall("Dwmapi\DwmSetWindowAttribute", "ptr", responseWindow.hWnd, "int", 20, "int*", true, "int", 4)
+
+; Add event listener for messages from JavaScript
+responseWindow.AddHostObjectToScript("ahkHandler", { func: ahkMessageHandler })
+ahkMessageHandler(message) {
+    try {
+        msgObj := jsongo.Parse(message)
+        if (msgObj.Has("action") && msgObj["action"] = "removeTransparency") {
+            ; Remove transparency when streaming is complete
+            WinSetTransparent("Off", responseWindow.hWnd)
+        }
+    } catch {
+        ; Ignore invalid messages
+    }
+}
 
 ; Assign actions to click events
 responseWindow.AddHostObjectToScript("ButtonClick", { func: buttonClickAction })
@@ -97,6 +148,9 @@ buttonClickAction(action) {
             manageState("model", "remove")
             postWebMessage("responseWindowButtonsEnabled", false)
             startLoadingCursor(true)
+            ; Show window with transparency for retry streaming
+            WinSetTransparent(217, responseWindow.hWnd)
+            postWebMessage("streamStart", requestParams["responseWindowTitle"])
             chatHistoryJSONRequest := manageChatHistoryJSON("get")
             router.removeLastAssistantMessage(&chatHistoryJSONRequest)
             FileOpen(requestParams["chatHistoryJSONRequestFile"], "w", "UTF-8-RAW").Write(chatHistoryJSONRequest)
@@ -228,6 +282,9 @@ chatSendButtonAction(*) {
 
     startLoadingCursor(true)
     postWebMessage("responseWindowButtonsEnabled", false)
+    ; Set transparency for streaming chat response
+    WinSetTransparent(217, responseWindow.hWnd)
+    postWebMessage("streamStart", requestParams["responseWindowTitle"])
     chatHistoryJSONRequest := manageChatHistoryJSON("get")
     router.appendToChatHistory("user", chatInputWindow.EditControl.Value, &
         chatHistoryJSONRequest, requestParams["chatHistoryJSONRequestFile"])
@@ -255,6 +312,9 @@ responseWindowSendToAllModels(uniqueID, lParam, msg, responseWindowhWnd) {
     startLoadingCursor(true)
     manageChatHistoryJSON("set", chatHistoryJSONRequest)
     postWebMessage("responseWindowButtonsEnabled", false)
+    ; Set transparency for streaming
+    WinSetTransparent(217, responseWindow.hWnd)
+    postWebMessage("streamStart", requestParams["responseWindowTitle"])
     sendRequestToLLM(&chatHistoryJSONRequest)
 }
 
@@ -263,24 +323,144 @@ responseWindowSendToAllModels(uniqueID, lParam, msg, responseWindowhWnd) {
 ; ----------------------------------------------------
 
 chatHistoryJSONRequest := manageChatHistoryJSON("get")
+
+; Show the window immediately with loading message before sending request
+showInitialWindow()
+
 sendRequestToLLM(&chatHistoryJSONRequest, true)
 
 sendRequestToLLM(&chatHistoryJSONRequest, initialRequest := false) {
 
     ; Run the cURL command asynchronously and store the PID
-    Run(FileOpen(requestParams["cURLCommandFile"], "r", "UTF-8").Read(), , "Hide", &cURLPID)
+    cURLCommand := FileOpen(requestParams["cURLCommandFile"], "r", "UTF-8").Read()
+    DebugLog("Starting cURL command")
+    DebugLog("Command: " cURLCommand)
+    Run(cURLCommand, , "Hide", &cURLPID)
     manageState("cURL", "set", cURLPID)
+    DebugLog("cURL PID: " cURLPID)
 
-    ; Waits for the process to complete or be aborted
-    ; while allowing the script to process events
-    while (ProcessExist(cURLPID)) {
-        Sleep 250
+    ; Initialize streaming state
+    streamedContent := ""
+    lastFilePosition := 0
+    isFirstChunk := true
+    loopCount := 0
+    
+    ; Initial message
+    if initialRequest {
+        DebugLog("Sending streamStart message to frontend")
+        postWebMessage("streamStart", requestParams["responseWindowTitle"])
     }
+
+    ; Stream processing loop - read file progressively
+    DebugLog("Entering streaming loop")
+    while (ProcessExist(cURLPID)) {
+        loopCount++
+        
+        ; Try to read new content from the output file
+        if FileExist(requestParams["cURLOutputFile"]) {
+            if (loopCount = 1)
+                DebugLog("Output file detected")
+            
+            try {
+                file := FileOpen(requestParams["cURLOutputFile"], "r", "UTF-8")
+                file.Seek(lastFilePosition)
+                newContent := file.Read()
+                currentPos := file.Pos
+                file.Close()
+                
+                if (newContent != "") {
+                    bytesRead := currentPos - lastFilePosition
+                    DebugLog("Read " bytesRead " bytes from position " lastFilePosition)
+                    lastFilePosition := currentPos
+                    
+                    ; Process each line (JSON chunk) from the stream
+                    lines := StrSplit(newContent, "`n", "`r")
+                    DebugLog("Processing " lines.Length " lines")
+                    
+                    for index, line in lines {
+                        trimmedLine := Trim(line)
+                        if (trimmedLine = "")
+                            continue
+                        
+                        DebugLog("Line " index ": " SubStr(trimmedLine, 1, 100) (StrLen(trimmedLine) > 100 ? "..." : ""))
+                        
+                        try {
+                            chunk := jsongo.Parse(trimmedLine)
+                            chunkType := Type(chunk)
+                            DebugLog("  Parsed chunk type: " chunkType)
+                            
+                            ; Verify chunk is an object, not a string
+                            if (chunkType != "Object" && chunkType != "Map") {
+                                DebugLog("  WARNING: Chunk is not an object! Type=" chunkType " Value=" String(chunk))
+                                continue
+                            }
+                            
+                            ; Log chunk structure
+                            if (chunk.Has("message"))
+                                DebugLog("  Has 'message' key, type: " Type(chunk["message"]))
+                            if (chunk.Has("done"))
+                                DebugLog("  Has 'done' key: " chunk["done"])
+                            
+                            ; Extract content from the chunk
+                            if (chunk.Has("message")) {
+                                msgObj := chunk["message"]
+                                msgType := Type(msgObj)
+                                
+                                if (msgType != "Object" && msgType != "Map") {
+                                    DebugLog("  WARNING: message is not an object! Type=" msgType)
+                                    continue
+                                }
+                                
+                                if (msgObj.Has("content")) {
+                                    chunkContent := msgObj["content"]
+                                    contentLen := StrLen(chunkContent)
+                                    DebugLog("  Content length: " contentLen " chars")
+                                    streamedContent .= chunkContent
+                                    
+                                    ; Send chunk to frontend for real-time display
+                                    postWebMessage("streamChunk", chunkContent)
+                                }
+                            }
+                            
+                            ; Check if stream is done
+                            if (chunk.Has("done") && chunk["done"]) {
+                                DebugLog("Stream marked as done")
+                                ; Store the model name
+                                if (chunk.Has("model")) {
+                                    modelName := chunk["model"]
+                                    DebugLog("  Model name: " modelName)
+                                    modelName := StrReplace(SubStr(modelName, InStr(modelName, "/") + 1), ":", "-")
+                                    manageState("model", "add", modelName)
+                                }
+                            }
+                        } catch as e {
+                            ; Log JSON parsing errors
+                            DebugLog("  JSON Parse Error: " e.Message " at line " e.Line)
+                            DebugLog("  Raw line: " trimmedLine)
+                            continue
+                        }
+                    }
+                }
+            } catch as e {
+                ; File might still be locked, continue
+                DebugLog("File read error: " e.Message)
+            }
+        } else if (loopCount = 1) {
+            DebugLog("Waiting for output file to be created...")
+        }
+        
+        Sleep 50  ; Poll every 50ms for smooth streaming
+    }
+    
+    DebugLog("Stream loop ended. Total loops: " loopCount)
+    DebugLog("Total content length: " StrLen(streamedContent) " chars")
 
     ; If user cancels the process, exit
     if !manageState("cURL", "get") {
+        DebugLog("User cancelled the request")
         manageState("cURL", "close")
         startLoadingCursor(false)
+        postWebMessage("streamEnd", false)
         if initialRequest {
             deleteTempFiles()
 
@@ -295,7 +475,8 @@ sendRequestToLLM(&chatHistoryJSONRequest, initialRequest := false) {
 
     ; Read the output after the process has completed
     if !FileExist(requestParams["cURLOutputFile"]) {
-        responseFromLLM := "**⛔ Error: Output file not found.**`n`nThe API request might have failed to create the response file. Check your Ollama server status or network connection."
+        DebugLog("ERROR: Output file not found after cURL completion")
+        responseFromLLM := "**⛔ Error: Output file not found.**`n`nThe API request might have failed to create the response file. Check your Ollama server status or network connection.`n`nDebug log: " A_Temp "\ResponseWindow_Debug_" requestParams["uniqueID"] ".log"
         manageState("cURL", "close")
         startLoadingCursor(false)
         CustomMessages.notifyResponseWindowState(CustomMessages.WM_RESPONSE_WINDOW_CLOSED,
@@ -303,83 +484,38 @@ sendRequestToLLM(&chatHistoryJSONRequest, initialRequest := false) {
         MsgBox(responseFromLLM, "API Error", 16)
         ExitApp
     }
-    JSONResponseFromLLM := FileOpen(requestParams["cURLOutputFile"], "r", "UTF-8").Read()
 
-    ; Process the JSON response from the LLM API
+    ; Finalize the stream
+    DebugLog("Finalizing stream")
+    responseFromLLM := streamedContent  ; Set the full response for final processing
+    postWebMessage("streamEnd", true)
+    
+    ; Process the final response
     try {
-        JSONResponseVar := jsongo.Parse(JSONResponseFromLLM)
-        responseFromLLM := router.extractJSONResponse(JSONResponseVar)
-
-        ; Get text after forward slash as responseFromLLM.model and replace colon (:) with dash (-)
-        responseFromLLM.model := StrReplace(SubStr(responseFromLLM.model, InStr(responseFromLLM.model, "/") + 1), ":",
-        "-")
-
-        manageState("model", "add", responseFromLLM.model)
+        DebugLog("Final response length: " StrLen(responseFromLLM) " chars")
+        
+        ; Get model info from state
+        modelHistory := manageState("model", "get")
+        currentModel := (modelHistory.Length > 0) ? modelHistory[modelHistory.Length] : "unknown"
+        DebugLog("Current model: " currentModel)
+        
+        ; Append to chat history
         router.appendToChatHistory("assistant",
-            responseFromLLM.response, &chatHistoryJSONRequest, requestParams["chatHistoryJSONRequestFile"])
+            responseFromLLM, &chatHistoryJSONRequest, requestParams["chatHistoryJSONRequestFile"])
+        DebugLog("Appended to chat history")
     } catch as e {
-        JSONResponseFromLLM := router.extractErrorResponse(JSONResponseVar)
-        responseFromLLM :=
-            "**⛔ Error parsing response**`n`n" e.Message
-            . "`n`n---`n`n**⚠️ Response from the API**`n`n"
-            . JSONResponseFromLLM.error
-            . "`n`n---`n`n"
-        errorCodes := {
-            400: "You may have specified an invalid API model. See [this guide](https://github.com/kdalanon/LLM-AutoHotkey-Assistant/blob/main/README.md#apimodels) on how to get the correct API models.",
-            401: "Authentication failed. Your API key may be invalid or expired. Re-check your Ollama configuration and try again.",
-            402: "Request rejected — check your Ollama server configuration.",
-            403: "Content flagged as inappropriate. Your input triggered content moderation and was rejected. Please revise your request and try again with different content.",
-            408: "Request timed out. The API request took too long to process. This might be due to network issues or server overload.",
-            429: "You've hit the rate limit of **" requestParams["singleAPIModelName"] "**. Try again after some time.",
-            502: "Service temporarily unavailable. The chosen model is either down or returned an invalid response. Please try again later or select a different model.",
-            503: "No suitable model available. There are no providers currently meeting your request requirements. Please try again later or adjust your routing settings."
-        }
-
-        code := JSONResponseFromLLM.code
-        responseFromLLM .= (errorCodes.HasKey(code) ? errorCodes[code] : "API returned an unexpected error (" code "). `n`n" JSONResponseFromLLM.error)
-        showResponseWindow(responseFromLLM, initialRequest)
+        DebugLog("ERROR processing final response: " e.Message " at line " e.Line)
+        responseFromLLM := "**⛔ Error parsing response**`n`n" e.Message
+        postWebMessage("renderMarkdown", [responseFromLLM, true])
         postWebMessage("responseWindowButtonsEnabled", true)
         startLoadingCursor(false)
         Exit
     }
 
-    ; Save Chat History and Latest Response so it can be viewed later
-    ; Begin by parsing the JSON string into an object
-    manageChatHistoryJSON("set", chatHistoryJSONRequest)
-    obj := jsongo.Parse(chatHistoryJSONRequest)
-
-    ; Get the messages array
-    messages := router.getMessages(obj)
-    totalMessages := messages.Length
-
-    ; Chat History - Iterate over each message in the 'messages' array
-    modelIndex := 1
-    for index, message in messages {
-        role := message.role
-        content := message.content
-
-        switch role {
-            case "system": chatHistory .= "**🔧 System Prompt**`n`n" content
-            case "user": chatHistory .= "`n`n---`n`n**🔵 You**`n`n" content
-            case "assistant": chatHistory .= "`n`n---`n`n**🟡 " manageState("model", "get")[modelIndex++] "**`n`n" content
-        }
-    }
-
-    ; Latest Response - Iterate backwards over each message in the 'messages' array to find the last assistant message
-    ; and calculate the current index starting from the end
-    loop totalMessages {
-        currentIndex := totalMessages - A_Index + 1  ;
-        msg := messages[currentIndex]
-        if (msg.role = "assistant") {
-            latestResponse := msg.content
-            break
-        }
-    }
-
-    manageState("chat", "add", { chatHistory: chatHistory, latestResponse: latestResponse })
-
+    ; Handle auto-paste or finalize UI
+    DebugLog("Handling final state")
     if requestParams["isAutoPaste"] {
-        A_Clipboard := responseFromLLM.response
+        A_Clipboard := responseFromLLM
         Send("^v")
         startLoadingCursor(false)
         CustomMessages.notifyResponseWindowState(CustomMessages.WM_RESPONSE_WINDOW_CLOSED, requestParams["uniqueID"],
@@ -387,11 +523,62 @@ sendRequestToLLM(&chatHistoryJSONRequest, initialRequest := false) {
         deleteTempFiles()
         ExitApp
     } else {
-        showResponseWindow(responseFromLLM.response, initialRequest, !initialRequest && !(WinActive(responseWindow.hWnd
-        )))
+        ; Finalize button states
+        buttonClickAction("resetChatHistoryButtonText")
         postWebMessage("responseWindowButtonsEnabled", true)
         startLoadingCursor(false)
     }
+}
+
+; ----------------------------------------------------
+; Show initial window immediately
+; ----------------------------------------------------
+
+showInitialWindow() {
+    ; Response Window's initial width and height (smaller, will grow with content)
+    desiredW := 450
+    desiredH := 300
+
+    ; Get mouse position to show window near cursor/menu
+    MouseGetPos(&mouseX, &mouseY)
+    
+    ; Calculate screen dimensions
+    screenW := A_ScreenWidth
+    screenH := A_ScreenHeight
+
+    ; Position near mouse cursor, but ensure it stays on screen
+    X := mouseX + 20  ; Offset from cursor
+    Y := mouseY - 50
+    
+    ; Ensure window stays within screen bounds
+    if (X + desiredW > screenW)
+        X := screenW - desiredW - 20
+    if (Y + desiredH > screenH)
+        Y := screenH - desiredH - 20
+    if (X < 0)
+        X := 20
+    if (Y < 0)
+        Y := 20
+
+    ; Adjust position for multiple models (cascade them slightly)
+    if (requestParams["numberOfAPIModels"] > 1) {
+        offsetX := (requestParams["APIModelsIndex"] - 1) * 30
+        offsetY := (requestParams["APIModelsIndex"] - 1) * 30
+        X := X + offsetX
+        Y := Y + offsetY
+        
+        ; Re-check bounds after offset
+        if (X + desiredW > screenW)
+            X := screenW - desiredW - 20
+        if (Y + desiredH > screenH)
+            Y := screenH - desiredH - 20
+    }
+    
+    pos := Format("x{} y{} w{} h{}", X, Y, desiredW, desiredH)
+
+    ; Show the window immediately with semi-transparency (85% opacity = 217)
+    responseWindow.Show(pos, requestParams["responseWindowTitle"])
+    WinSetTransparent(217, responseWindow.hWnd)
 }
 
 ; ----------------------------------------------------

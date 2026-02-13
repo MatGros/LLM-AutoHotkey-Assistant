@@ -161,14 +161,107 @@ window.addEventListener("beforeunload", function () {
   }
 });
 
-// Call renderMarkdown when the DOM is ready
+// ========================================
+// Streaming functionality
+// ========================================
+
+var streamingContent = '';
+var isStreaming = false;
+var autoScrollEnabled = true;
+
+// Start streaming - show initial loading message
+function streamStart(modelName) {
+  isStreaming = true;
+  streamingContent = '';
+  autoScrollEnabled = true;
+  
+  var contentElement = document.getElementById('content');
+  contentElement.innerHTML = '<div class="streaming-indicator"><span class="streaming-dot"></span><span class="streaming-dot"></span><span class="streaming-dot"></span></div><div id="streaming-content" class="streaming-text"></div><span class="streaming-cursor">▊</span>';
+  
+  // Disable buttons during streaming
+  responseWindowButtonsEnabled(false);
+}
+
+// Receive and display a chunk of streamed content
+function streamChunk(chunk) {
+  if (!isStreaming) return;
+  
+  streamingContent += chunk;
+  
+  // Render the accumulated content as markdown in real-time
+  var result = md.render(streamingContent);
+  
+  var streamingDiv = document.getElementById('streaming-content');
+  if (streamingDiv) {
+    streamingDiv.innerHTML = result;
+    
+    // Auto-scroll to bottom if enabled and user hasn't scrolled up
+    if (autoScrollEnabled) {
+      var contentElement = document.getElementById('content');
+      var isScrolledToBottom = contentElement.scrollHeight - contentElement.clientHeight <= contentElement.scrollTop + 100;
+      if (isScrolledToBottom || contentElement.scrollTop === 0) {
+        contentElement.scrollTo({
+           top: contentElement.scrollHeight,
+           behavior: 'smooth'
+        });
+      }
+    }
+  }
+}
+
+// End streaming - finalize display
+function streamEnd(success) {
+  isStreaming = false;
+  
+  if (success) {
+    // Remove cursor and streaming indicator
+    var contentElement = document.getElementById('content');
+    var cursor = contentElement.querySelector('.streaming-cursor');
+    var indicator = contentElement.querySelector('.streaming-indicator');
+    if (cursor) cursor.remove();
+    if (indicator) indicator.remove();
+    
+    // Final render of complete markdown
+    var result = md.render(streamingContent);
+    contentElement.innerHTML = result;
+    
+    // Save to localStorage
+    localStorage.setItem('preMarkdownText', streamingContent);
+    
+    // Remove transparency via AHK handler
+    if (typeof ahkHandler !== 'undefined') {
+      ahkHandler.Func(JSON.stringify({ action: 'removeTransparency' }));
+    }
+  }
+  
+  // Re-enable buttons
+  responseWindowButtonsEnabled(true);
+  
+  // Reset button text
+  var button = document.getElementById("chatHistoryButton");
+  button.textContent = "Chat History";
+}
+
+// Detect user scroll to disable auto-scroll
 document.addEventListener("DOMContentLoaded", function () {
+  var contentElement = document.getElementById('content');
+  
+  contentElement.addEventListener('wheel', function() {
+    if (isStreaming) {
+      autoScrollEnabled = false;
+    }
+  });
+  
   // Retrieve pre-markdown text from localStorage and re-render
   var storedContent = localStorage.getItem('preMarkdownText');
-  renderMarkdown(storedContent);
+  if (storedContent) {
+    renderMarkdown(storedContent);
+  }
 
   // Retrieve the button text from localStorage
   var storedButtonText = localStorage.getItem("chatHistoryButtonText");
   var button = document.getElementById("chatHistoryButton");
-  button.textContent = storedButtonText;
+  if (storedButtonText) {
+    button.textContent = storedButtonText;
+  }
 });

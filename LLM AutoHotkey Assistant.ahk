@@ -1,5 +1,5 @@
-#Requires AutoHotkey v2.0.18+
-#Include <Config>
+#Requires AutoHotkey v2.0
+#Include lib\Config.ahk
 #SingleInstance
 
 ; ----------------------------------------------------
@@ -217,7 +217,7 @@ quickAPIHealthCheck() {
         if (!testModel)
              testModel := "gemma3:4b" ; Default fallback
 
-        req := router.createJSONRequest(testModel, "System: connectivity check.", "hi")
+        req := router.createJSONRequest(testModel, "System: connectivity check.", "hi", false)
         tmpReq := A_Temp "\llm_test_request.json"
         tmpOut := A_Temp "\llm_test_output.json"
         FileOpen(tmpReq, "w", "UTF-8-RAW").Write(req)
@@ -247,8 +247,8 @@ quickAPIHealthCheck() {
             var := jsongo.Parse(raw)
             respObj := router.extractJSONResponse(var)
            
-            if (respObj.HasProp("error")) {
-                 throw respObj.error
+            if (respObj.error != "") {
+                 throw Error(respObj.error)
             }
 
             resp := respObj.response
