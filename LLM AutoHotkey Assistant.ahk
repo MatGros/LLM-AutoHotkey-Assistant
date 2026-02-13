@@ -1,3 +1,4 @@
+#Requires AutoHotkey v2.0.18+
 #Include <Config>
 #SingleInstance
 
@@ -5,7 +6,12 @@
 ; Hotkeys
 ; ----------------------------------------------------
 
-^F12:: mainScriptHotkeyActions("showPromptMenu")
+; Trigger on release to match Windows behavior and ensure native menu is blocked
+^RButton:: return
+^RButton Up:: {
+    mainScriptHotkeyActions("showPromptMenu")
+}
+
 ~^s:: mainScriptHotkeyActions("saveAndReloadScript")
 ~^w:: mainScriptHotkeyActions("closeWindows")
 
@@ -29,7 +35,7 @@ mainScriptHotkeyActions(action) {
 
                 ; Send message to menu
                 sendToMenu := Menu()
-                promptMenu.Add("Send message to", sendToMenu)
+                promptMenu.Add("Envoyer un message à", sendToMenu)
 
                 for uniqueID, modelData in getActiveModels() {
                     sendToMenu.Add(modelData.promptName, sendToPromptGroupHandler.Bind(modelData.promptName))
@@ -37,7 +43,7 @@ mainScriptHotkeyActions(action) {
 
                 ; If there are more than one Response Windows, add "All" menu option
                 if (activeModelsCount > 1) {
-                    sendToMenu.Add("All", (*) => sendToAllModelsInputWindow.showInputWindow(, , "ahk_id " sendToAllModelsInputWindow
+                    sendToMenu.Add("Tous", (*) => sendToAllModelsInputWindow.showInputWindow(, , "ahk_id " sendToAllModelsInputWindow
                         .guiObj.hWnd))
                 }
 
@@ -80,26 +86,24 @@ mainScriptHotkeyActions(action) {
                 promptMenu.Add()
 
                 ; Define the action types
-                actionTypes := ["Activate", "Minimize", "Close"]
+                actionTypes := ["activer", "réduire", "fermer"]
+                actionLabels := ["Activer", "Réduire", "Fermer"]
 
                 ; Create submenus for each action type
-                for _, actionType in actionTypes {
-
-                    ; Convert to lowercase for function names
-                    actionKey := StrLower(actionType)
+                for idx, actionType in actionTypes {
 
                     actionSubMenu := Menu()
-                    promptMenu.Add(actionType, actionSubMenu)
+                    promptMenu.Add(actionLabels[idx], actionSubMenu)
 
                     ; Add menu items for each active model
                     for uniqueID, modelData in getActiveModels() {
-                        actionSubMenu.Add(modelData.promptName, managePromptWindows.Bind(actionKey, modelData.promptName
+                        actionSubMenu.Add(modelData.promptName, managePromptWindows.Bind(actionType, modelData.promptName
                         ))
                     }
 
                     ; If there are more than one Response Windows, add "All" menu option
                     if (activeModelsCount > 1) {
-                        actionSubMenu.Add("All", managePromptWindows.Bind(actionKey))
+                        actionSubMenu.Add("Tous", managePromptWindows.Bind(actionType))
                     }
                 }
             }
@@ -108,12 +112,12 @@ mainScriptHotkeyActions(action) {
             promptMenu.Add()
 
             ; Help menu
-            promptMenu.Add("&Help", (*) => showHelpDialog())
+            promptMenu.Add("&Aide", (*) => showHelpDialog())
 
             ; Options menu
-            promptMenu.Add("&Options", optionsMenu := Menu())
-            optionsMenu.Add("&1 - Edit prompts", (*) => Run("Notepad " A_ScriptDir "\Prompts.ahk"))
-            optionsMenu.Add("&2 - View Ollama library", (*) => Run("https://ollama.com/library"))
+            promptMenu.Add("&Paramètres", optionsMenu := Menu())
+            optionsMenu.Add("&1 - Éditer les prompts", (*) => Run("Notepad " A_ScriptDir "\Prompts.ahk"))
+            optionsMenu.Add("&2 - Voir la bibliothèque Ollama", (*) => Run("https://ollama.com/library"))
             promptMenu.Show()
 
         case "suspendHotkey":
@@ -130,7 +134,7 @@ mainScriptHotkeyActions(action) {
             Sleep 100
 
             if (activeModelsCount > 0) {
-                MsgBox("Script will automatically reload once all Response Windows are closed.",
+                MsgBox("Le script se recharge automatiquement une fois toutes les fenêtres de réponse fermées.",
                     "LLM AutoHotkey Assistant", 64)
                 responseWindowState(0, 0, "reloadScript", 0)
             } else {
@@ -151,21 +155,21 @@ mainScriptHotkeyActions(action) {
 ; ----------------------------------------------------
 
 trayMenuItems := [{
-    menuText: "&Help",
+    menuText: "&Aide",
     function: (*) => showHelpDialog()
 }, {
-    menuText: "&Test API",
-    description: "Run a quick connectivity + model response test (no key input needed)",
+    menuText: "&Tester l'API",
+    description: "Exécuter un test rapide de connectivité + réponse du modèle (pas besoin d'entrée de clé)",
     function: (*) => (TEST_API_MODE := "mock", quickAPIHealthCheck(), TEST_API_MODE := "")
 }, {
-    menuText: "&Reset Configuration",
-    description: "Clear saved configuration so the app will ask for it again on next start",
-    function: (*) => (FileDelete(A_AppData "\LLM-AutoHotkey-Assistant\ollama_config.json"), MsgBox("Configuration cleared. The script will now reload and ask for setup.", "Reset Configuration", 64), Reload())
+    menuText: "&Réinitialiser la configuration",
+    description: "Effacer la configuration enregistrée pour que l'app la demande à nouveau au prochain démarrage",
+    function: (*) => (FileDelete(A_AppData "\LLM-AutoHotkey-Assistant\ollama_config.json"), MsgBox("Configuration effacée. Le script va maintenant recharger et demander la configuration.", "Réinitialiser la configuration", 64), Reload())
 }, {
-    menuText: "&Reload Script",
+    menuText: "&Recharger le script",
     function: (*) => Reload()
 }, {
-    menuText: "E&xit",
+    menuText: "&Quitter",
     function: (*) => ExitApp()
 }]
 
@@ -195,7 +199,7 @@ quickAPIHealthCheck() {
     ; If user requested a mock run (via tray menu) or the environment variable is set,
     ; skip the real HTTP/cURL call and report success for UI testing.
     if (EnvGet("LLM_AHK_TEST_MODE") = "mock" || (IsSet(TEST_API_MODE) && TEST_API_MODE = "mock")) {
-        TrayTip("LLM status (mock)", "Mock API test passed — GUI flow OK.", 3)
+        showSuccessTooltip("✓ Mock API test passed — GUI flow OK.")
         TraySetIcon("icons\IconOn.ico")
         return
     }
@@ -211,7 +215,7 @@ quickAPIHealthCheck() {
             }
         }
         if (!testModel)
-             testModel := "llama3.1:latest" ; Default fallback
+             testModel := "gemma3:4b" ; Default fallback
 
         req := router.createJSONRequest(testModel, "System: connectivity check.", "hi")
         tmpReq := A_Temp "\llm_test_request.json"
@@ -228,13 +232,13 @@ quickAPIHealthCheck() {
         if (ProcessExist(pid)) {
             ProcessClose(pid)
             TraySetIcon("icons\IconOff.ico")
-            MsgBox("API connectivity test timed out. The model may be unreachable or the Base URL may be invalid.", "API test failed", "16")
+            MsgBox("Le test de connectivité API a expiré. Le modèle peut être inaccessible ou l'URL de base peut être invalide.", "Test API échoué", "16")
             return
         }
 
         if !FileExist(tmpOut) {
             TraySetIcon("icons\IconOff.ico")
-            MsgBox("API test failed: no response file created.", "API test failed", "16")
+            MsgBox("Test API échoué : aucun fichier de réponse créé.", "Test API échoué", "16")
             return
         }
 
@@ -250,7 +254,7 @@ quickAPIHealthCheck() {
             resp := respObj.response
             if (!resp || Trim(resp) = "")
                 throw Error("empty response")
-            TrayTip("LLM status", "Ollama connection OK — model responded.", 3)
+            showSuccessTooltip("✓ Ollama connection OK — model responded.")
             TraySetIcon("icons\IconOn.ico")
             FileDelete(tmpReq)
             FileDelete(tmpOut)
@@ -260,7 +264,7 @@ quickAPIHealthCheck() {
             rawContent := ""
             try rawContent := FileOpen(tmpOut, "r", "UTF-8").Read()
             TraySetIcon("icons\IconOff.ico")
-            MsgBox("API test failed. Error: " errDetail "`n`nResponse Content:`n" SubStr(rawContent, 1, 500) "`n`nYou can reset the configuration from the tray menu.", "API test failed", 16)
+            MsgBox("Test API échoué. Erreur : " errDetail "`n`nContenu de la réponse :`n" SubStr(rawContent, 1, 500) "`n`nVous pouvez réinitialiser la configuration depuis le menu de la barre d'état.", "Test API échoué", 16)
         }
     } catch {
         ; silently ignore startup test errors
@@ -274,9 +278,9 @@ SetTimer(quickAPIHealthCheck, -10)
 ; Create Input Windows
 ; ----------------------------------------------------
 
-customPromptInputWindow := InputWindow("Custom prompt")
-sendToAllModelsInputWindow := InputWindow("Send message to all")
-sendToPromptNameInputWindow := InputWindow("Send message to prompt")
+customPromptInputWindow := InputWindow("Prompt personnalisé")
+sendToAllModelsInputWindow := InputWindow("Envoyer un message à tous")
+sendToPromptNameInputWindow := InputWindow("Envoyer un message au prompt")
 
 ; ----------------------------------------------------
 ; Register sendButtonActions
@@ -308,7 +312,7 @@ customPromptSendButtonAction(*) {
 
 sendToAllModelsSendButtonAction(*) {
     if (getActiveModels().Count = 0) {
-        MsgBox "No Response Windows found. Message not sent.", "Send message to all models", "IconX"
+        MsgBox "Aucune fenêtre de réponse trouvée. Message non envoyé.", "Envoyer un message à tous les modèles", "IconX"
         sendToAllModelsInputWindow.guiObj.Hide
         return
     }
@@ -333,7 +337,7 @@ sendToAllModelsSendButtonAction(*) {
 
 sendToGroupSendButtonAction(*) {
     if (getActiveModels().Count = 0) {
-        MsgBox "No Response Windows found. Message not sent.", "Send message to all models", "IconX"
+        MsgBox "Aucune fenêtre de réponse trouvée. Message non envoyé.", "Envoyer un message à tous les modèles", "IconX"
         sendToAllModelsInputWindow.guiObj.Hide
         return
     }
@@ -382,7 +386,7 @@ sendToPromptGroupHandler(promptName, *) {
 
     ; Check if the prompt has skipConfirmation property and set accordingly
     sendToPromptNameInputWindow.setSkipConfirmation(selectedPrompt.HasProp("skipConfirmation") ? selectedPrompt.skipConfirmation : false)
-    sendToPromptNameInputWindow.showInputWindow(, "Send message to " promptName, "ahk_id " sendToPromptNameInputWindow.guiObj
+    sendToPromptNameInputWindow.showInputWindow(, "Envoyer un message à " promptName, "ahk_id " sendToPromptNameInputWindow.guiObj
         .hWnd
     )
 }
@@ -407,9 +411,9 @@ managePromptWindows(operation, promptName := "", *) {
     ; Perform the requested operation on each window
     for _, hWnd in hWndsToManage {
         switch operation {
-            case "activate": WinActivate("ahk_id " hWnd)
-            case "minimize": WinMinimize("ahk_id " hWnd)
-            case "close": WinClose("ahk_id " hWnd)
+            case "activer": WinActivate("ahk_id " hWnd)
+            case "réduire": WinMinimize("ahk_id " hWnd)
+            case "fermer": WinClose("ahk_id " hWnd)
         }
     }
 }
@@ -520,7 +524,7 @@ processInitialRequest(promptName, menuText, systemPrompt, APIModels, copyAsMarkd
             userPrompt := customPromptMessage
         } else {
             manageCursorAndToolTip("Reset")
-            MsgBox "The attempt to copy text onto the clipboard failed.", "No text copied", "IconX"
+            MsgBox "Impossible de copier le texte dans le presse-papiers.", "Aucun texte copié", "IconX"
             return
         }
     } else if IsSet(customPromptMessage) {
@@ -669,14 +673,14 @@ showHelpDialog() {
     helpText := "LLM AutoHotkey Assistant - Raccourcis Clavier (AZERTY)`n"
     helpText .= "================================================`n`n"
     helpText .= "RACCOURCIS PRINCIPAUX:`n"
-    helpText .= "  • Ctrl+F12          - Ouvrir le menu des prompts`n"
+    helpText .= "  • Ctrl+Clic droit    - Ouvrir le menu des prompts`n"
     helpText .= "  • Ctrl+S            - Recharger le script (si édition)`n"
     helpText .= "  • Ctrl+W            - Fermer les fenêtres d'entrée`n"
     helpText .= "  • CapsLock + F12    - Suspendre/reprendre les raccourcis`n`n"
     helpText .= "CONSEILS D'UTILISATION:`n"
-    helpText .= "  1. Appuyez sur Ctrl+F12 pour ouvrir le menu`n"
+    helpText .= "  1. Appuyez sur Ctrl+Clic droit pour ouvrir le menu`n"
     helpText .= "  2. Cliquez sur un prompt pour l'utiliser`n"
-    helpText .= "  3. Copiez d'abord du texte, puis Ctrl+F12 → sélectionnez`n"
+    helpText .= "  3. Copiez d'abord du texte, puis Ctrl+Clic droit → sélectionnez`n"
     helpText .= "  4. Utilisez Options pour éditer les prompts`n`n"
     helpText .= "================================================`n"
     helpText .= "Clic-droit sur l'icône pour plus d'options!"
@@ -686,6 +690,24 @@ showHelpDialog() {
 
 
 ; ----------------------------------------------------
+; Success Tooltip Helper
+; ----------------------------------------------------
+showSuccessTooltip(message) {
+    ; Create a custom success notification GUI
+    successGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "Success")
+    successGui.BackColor := "28a745"  ; Green background
+    successGui.SetFont("s14 cWhite Bold", "Segoe UI")
+    
+    ; Add success icon (checkmark) and message
+    successGui.Add("Text", "x20 y15 w660 Center", "✓ " message)
+    
+    ; Show centered at top of screen
+    successGui.Show("xCenter y50 w700 h60 NoActivate")
+    
+    ; Auto-close after 3 seconds
+    SetTimer(() => successGui.Destroy(), -3000)
+}
+
 ; Cursor and Tooltip management
 ; ----------------------------------------------------
 

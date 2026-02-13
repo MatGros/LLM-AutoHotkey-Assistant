@@ -41,24 +41,24 @@ loadOllamaConfig() {
     }
 
     ; 3) Prompt the user
-    g := Gui("+AlwaysOnTop +Owner", "Ollama Configuration")
+    g := Gui("+AlwaysOnTop +Owner", "Configuration Ollama")
     g.SetFont("s9", "Segoe UI")
     
-    g.Add("Text", "x10 y10 w380", "Select Ollama Backend Mode:")
+    g.Add("Text", "x10 y10 w380", "Sélectionnez le mode backend Ollama :")
     
     modeLocal := g.Add("Radio", "x20 y35 w150 Checked", "Local (localhost:11434)")
-    modeCloud := g.Add("Radio", "x180 y35 w150", "Cloud / Custom URL")
+    modeCloud := g.Add("Radio", "x180 y35 w150", "Cloud / URL personnalisée")
     
-    g.Add("Text", "x10 y65 w380", "Base URL:")
+    g.Add("Text", "x10 y65 w380", "URL de base :")
     editUrl := g.Add("Edit", "x10 y85 w380 vBaseURL", "http://localhost:11434")
     
-    g.Add("Text", "x10 y115 w380", "API Key (Optional / For Cloud):")
+    g.Add("Text", "x10 y115 w380", "Clé API (Optionnel / Pour Cloud) :")
     editKey := g.Add("Edit", "x10 y135 w380 Password vAPIKey", "")
     
-    saveCb := g.Add("CheckBox", "x10 y170 Checked vSave", "Save configuration")
+    saveCb := g.Add("CheckBox", "x10 y170 Checked vSave", "Enregistrer la configuration")
     
     btnOk := g.Add("Button", "x220 y200 w80 Default", "OK")
-    btnCancel := g.Add("Button", "x310 y200 w80", "Cancel")
+    btnCancel := g.Add("Button", "x310 y200 w80", "Annuler")
 
     ; Events
     modeLocal.OnEvent("Click", (*) => (editUrl.Value := "http://localhost:11434", editKey.Enabled := false, editKey.Value := ""))
@@ -97,7 +97,7 @@ loadOllamaConfig() {
         try {
             FileOpen(configFile, "w", "UTF-8").Write(jsongo.Stringify(conf))
         } catch as e {
-             MsgBox("Unable to save config: " (HasProp(e, "Message") ? e.Message : e), "Error", 48)
+             MsgBox("Impossible d'enregistrer la configuration : " (HasProp(e, "Message") ? e.Message : e), "Erreur", 48)
         }
     }
     
@@ -108,101 +108,101 @@ loadOllamaConfig() {
 ; ----------------------------------------------------
 
 prompts := [{
-    promptName: "Multi-model combo",
-    menuText: "&1 - Universal Assistant (Llama 3.1)",
-    systemPrompt: "You are a helpful assistant. Follow the instructions that I will provide or answer any questions that I will ask. My first query is the following:",
+    promptName: "Combo multi-modèles",
+    menuText: "&1 - Assistant Universel (Gemma 3)",
+    systemPrompt: "Tu es un assistant utile. Suis les instructions que je vais fournir ou réponds aux questions que je vais poser. Ma première requête est la suivante :",
     APIModels: "
     (
-    llama3.1:latest
+    gemma3:4b
     )",
     isCustomPrompt: true,
-    customPromptInitialMessage: "How can I help you today?",
-    tags: ["&Custom prompts", "&Multi-models", "&General"]
+    customPromptInitialMessage: "Comment puis-je vous aider aujourd'hui ?",
+    tags: ["&Prompts personnalisés", "&Multi-modèles", "&Général"]
 }, {
-    promptName: "Rephrase (Fast)",
-    menuText: "&1 - Rephrase (Fast)",
-    systemPrompt: "Your task is to rephrase the following text or paragraph in English to ensure clarity, conciseness, and a natural flow. If there are abbreviations present, expand it when it's used for the first time, like so: OCR (Optical Character Recognition). The revision should preserve the tone, style, and formatting of the original text. If possible, split it into paragraphs to improve readability. Additionally, correct any grammar and spelling errors you come across. You should also answer follow-up questions if asked. Respond with the rephrased text only:",
+    promptName: "Reformuler (Rapide)",
+    menuText: "&1 - Reformuler (Rapide)",
+    systemPrompt: "Ta tâche est de reformuler le texte ou paragraphe suivant pour garantir clarté, concision et fluidité naturelle. Si des abréviations sont présentes, développe-les lors de leur première utilisation, comme ceci : OCR (Reconnaissance Optique de Caractères). La révision doit préserver le ton, le style et le formatage du texte original. Si possible, divise-le en paragraphes pour améliorer la lisibilité. De plus, corrige toutes les erreurs de grammaire et d'orthographe que tu rencontres. Tu dois également répondre aux questions de suivi si demandé. Réponds uniquement avec le texte reformulé :",
     APIModels: "
     (
-    qwen2.5-coder:7b
+    gemma3:4b
     )",
-    tags: ["&Text manipulation", "&General"]
+    tags: ["&Manipulation de texte", "&Général"]
 }, {
-    promptName: "Summarize (Powerful)",
-    menuText: "&2 - Summarize (Powerful)",
-    systemPrompt: "Your task is to summarize the following article in English to ensure clarity, conciseness, and a natural flow. If there are abbreviations present, expand it when it's used for the first time, like so: OCR (Optical Character Recognition). The summary should preserve the tone, style, and formatting of the original text, and should be in its original language. If possible, split it into paragraphs to improve readability. Additionally, correct any grammar and spelling errors you come across. You should also answer follow-up questions if asked. Respond with the summary only:",
+    promptName: "Résumer (Puissant)",
+    menuText: "&2 - Résumer (Puissant)",
+    systemPrompt: "Ta tâche est de résumer l'article suivant pour garantir clarté, concision et fluidité naturelle. Si des abréviations sont présentes, développe-les lors de leur première utilisation, comme ceci : OCR (Reconnaissance Optique de Caractères). Le résumé doit préserver le ton, le style et le formatage du texte original, et doit être dans sa langue d'origine. Si possible, divise-le en paragraphes pour améliorer la lisibilité. De plus, corrige toutes les erreurs de grammaire et d'orthographe que tu rencontres. Tu dois également répondre aux questions de suivi si demandé. Réponds uniquement avec le résumé :",
     APIModels: "
     (
-    llama3.1:latest
+    gemma3:4b
     )",
-    tags: ["&Text manipulation", "&Articles", "&General"]
+    tags: ["&Manipulation de texte", "&Articles", "&Général"]
 }, {
-    promptName: "Translate to English",
-    menuText: "&3 - Translate to English",
-    systemPrompt: "Generate an English translation for the following text or paragraph, ensuring the translation accurately conveys the intended meaning or idea without excessive deviation. If there are abbreviations present, expand it when it's used for the first time, like so: OCR (Optical Character Recognition). The translation should preserve the tone, style, and formatting of the original text. If possible, split it into paragraphs to improve readability. Additionally, correct any grammar and spelling errors you come across. You should also answer follow-up questions if asked. Respond with the translation only:",
+    promptName: "Traduire en français",
+    menuText: "&3 - Traduire en français",
+    systemPrompt: "Génère une traduction en français pour le texte ou paragraphe suivant, en veillant à ce que la traduction transmette fidèlement le sens ou l'idée prévue sans déviation excessive. Si des abréviations sont présentes, développe-les lors de leur première utilisation, comme ceci : OCR (Reconnaissance Optique de Caractères). La traduction doit préserver le ton, le style et le formatage du texte original. Si possible, divise-la en paragraphes pour améliorer la lisibilité. De plus, corrige toutes les erreurs de grammaire et d'orthographe que tu rencontres. Tu dois également répondre aux questions de suivi si demandé. Réponds uniquement avec la traduction :",
     APIModels: "
     (
-    llama3.1:latest
+    gemma3:4b
     )",
-    tags: ["&Text manipulation", "Language", "&General"]
+    tags: ["&Manipulation de texte", "Langue", "&Général"]
 }, {
-    promptName: "Define (Fast)",
-    menuText: "&4 - Define (Fast)",
-    systemPrompt: "Provide and explain the definition of the following, providing analogies if needed. In addition, answer follow-up questions if asked:",
+    promptName: "Définir (Rapide)",
+    menuText: "&4 - Définir (Rapide)",
+    systemPrompt: "Fournis et explique la définition du terme suivant, en fournissant des analogies si nécessaire. De plus, réponds aux questions de suivi si demandé :",
     APIModels: "
     (
-    qwen2.5-coder:7b
+    gemma3:4b
     )",
-    tags: ["&Text manipulation", "Learning", "&General"]
+    tags: ["&Manipulation de texte", "Apprentissage", "&Général"]
 }, {
-    promptName: "Custom Prompt",
-    menuText: "&5 - Custom Prompt (Balanced)",
-    systemPrompt: "You are a helpful assistant. Follow the instructions that I will provide or answer any questions that I will ask.",
+    promptName: "Prompt personnalisé",
+    menuText: "&5 - Prompt personnalisé (Équilibré)",
+    systemPrompt: "Tu es un assistant utile. Suis les instructions que je vais fournir ou réponds aux questions que je vais poser.",
     APIModels: "
     (
-    llama3.1:latest
+    gemma3:4b
     )",
     isCustomPrompt: true,
     isAutoPaste: true,
-    tags: ["&Custom prompts", "&Auto paste", "&General"]
+    tags: ["&Prompts personnalisés", "&Collage auto", "&Général"]
 }, {
-    promptName: "Quick Answer",
-    menuText: "&6 - Quick Answer (Ultra Fast)",
-    systemPrompt: "Provide a quick, concise answer to the following. Be brief and direct:",
+    promptName: "Réponse rapide",
+    menuText: "&6 - Réponse rapide (Ultra rapide)",
+    systemPrompt: "Fournis une réponse rapide et concise au texte suivant. Sois bref et direct :",
     APIModels: "
     (
-    qwen2.5-coder:7b
+    gemma3:4b
     )",
     isCustomPrompt: true,
-    tags: ["&Custom prompts", "&Fast responses", "&General"]
+    tags: ["&Prompts personnalisés", "&Réponses rapides", "&Général"]
 }, {
-    promptName: "Detailed Analysis",
-    menuText: "&7 - Detailed Analysis (Powerful)",
-    systemPrompt: "Provide a thorough and detailed analysis of the following. Think deeply about the topic and provide comprehensive insights:",
+    promptName: "Analyse détaillée",
+    menuText: "&7 - Analyse détaillée (Puissant)",
+    systemPrompt: "Fournis une analyse approfondie et détaillée du texte suivant. Réfléchis profondément au sujet et fournis des insights complets :",
     APIModels: "
     (
-    llama3.1:latest
+    gemma3:4b
     )",
     isCustomPrompt: true,
-    tags: ["&Custom prompts", "&Deep analysis", "&General"]
+    tags: ["&Prompts personnalisés", "&Analyse approfondie", "&Général"]
 }, {
-    promptName: "Multi-line prompt example",
-    menuText: "Multi-line prompt example",
+    promptName: "Exemple de prompt multiligne",
+    menuText: "Exemple de prompt multiligne",
     systemPrompt: "
     (
-    This prompt is broken down into multiple lines.
+    Ceci est un prompt décomposé sur plusieurs lignes.
 
-    Here is the second sentence.
+    Voici la deuxième phrase.
 
-    And the third one.
+    Et la troisième.
 
-    As long as the prompt is inside the quotes and the opening and closing parenthesis,
+    Tant que le prompt est entre guillemets et les parenthèses d'ouverture et de fermeture,
 
-    it will be valid.
+    il sera valide.
     )",
     APIModels: "
     (
-    llama3.1:latest
+    gemma3:4b
     )",
-    tags: ["&Examples"]
+    tags: ["&Exemples"]
 }]

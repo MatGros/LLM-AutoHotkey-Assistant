@@ -27,7 +27,7 @@
 
 | ID       | Feature                  | Description Courte                                                         | Origine   | Statut |
 | :------- | :----------------------- | :------------------------------------------------------------------------- | :-------- | :----: |
-| **F-01** | Prompt Menu              | Menu contextuel F12 avec prompts personnalisables et sous-menus par tags   | Fork+     | ✅     |
+| **F-01** | Prompt Menu              | Menu contextuel Ctrl+Clic Droit avec prompts personnalisables par tags  | Fork+     | ✅     |
 | **F-02** | Response Window          | Fenetre WebView2 affichant la reponse Markdown rendue (code, KaTeX, etc.)  | Fork      | ✅     |
 | **F-03** | Multi-Model              | Lancement simultane de plusieurs modeles pour un meme prompt               | Fork      | ✅     |
 | **F-04** | Chat Session             | Conversation multi-tours avec historique JSON persistant                   | Fork      | ✅     |
@@ -37,7 +37,7 @@
 | **F-08** | Configuration GUI        | GUI de configuration BaseURL / APIKey avec sauvegarde `%AppData%`          | Nouveau   | ✅     |
 | **F-09** | Health Check             | Test de connectivite au demarrage avec retour visuel (tray icon)           | Nouveau   | ✅     |
 | **F-10** | Dark Mode                | Title bar, menus, MsgBox, tooltips et WebView2 en mode sombre             | Fork      | ✅     |
-| **F-11** | Hotkeys                  | F12 (menu), Ctrl+S (reload), Ctrl+W (fermer), CapsLock+F12 (suspend)      | Fork+     | ✅     |
+| **F-11** | Hotkeys                  | Ctrl+Clic Droit (menu), Ctrl+S (reload), Ctrl+W (fermer), CapsLock+F12     | Fork+     | ✅     |
 | **F-12** | Tray Icon Sync           | Icone tray reflete l'etat : connecte (IconOn) / erreur (IconOff)          | Nouveau   | ✅     |
 | **F-13** | Loading Cursor           | Curseur systeme "working in background" pendant les requetes               | Fork      | ✅     |
 | **F-14** | Tooltip Tracking         | Tooltip suivant la souris listant les prompts en cours de chargement       | Fork      | ✅     |
@@ -176,7 +176,7 @@
 ### [F-14] Tooltip Tracking
 
 - `ToolTipEx()` affiche un tooltip suivant la souris avec la liste des prompts en chargement.
-- Format : `Retrieving response for the following prompt(s) (Press ESC to cancel):\n- PromptName [model]`
+- Format : `Retrieving response for the following prompt>(s) (Press ESC to cancel):\n- PromptName [model]`
 - Disparait automatiquement quand toutes les requetes sont terminees.
 
 ### [F-15] Send to All Models
@@ -331,6 +331,33 @@ Chaque prompt est un objet avec les proprietes suivantes :
 ## HISTORIQUE DES MODIFICATIONS (CHANGELOG)
 
 Ce fork est base sur le tag **v2.0.0** du projet upstream [kdalanon/LLM-AutoHotkey-Assistant](https://github.com/kdalanon/LLM-AutoHotkey-Assistant).
+
+### Liste des prompts et modèles (comparaison avec `v2.0.0`) 🔎
+
+> Source : `Prompts.ahk` — section `prompts`.
+
+| Prompt (promptName) | `menuText` (aperçu) | Modèle(s) (`APIModels`) |
+| :------------------ | :------------------ | :---------------------- |
+| Multi-model combo   | `&1 - Assistant Universel (Gemma 3)` | `gemma3:4b` |
+| Rephrase (Fast)     | `&1 - Reformuler (Rapide)`             | `gemma3:4b` |
+| Summarize (Powerful)| `&2 - Résumer (Puissant)`              | `gemma3:4b` |
+| Translate to English| `&3 - Traduire en français`            | `gemma3:4b` |
+| Define (Fast)       | `&4 - Définir (Rapide)`                | `gemma3:4b` |
+| Custom Prompt       | `&5 - Prompt personnalisé (Équilibré)` | `gemma3:4b` |
+| Quick Answer        | `&6 - Réponse rapide (Ultra rapide)`   | `gemma3:4b` |
+| Detailed Analysis   | `&7 - Analyse détaillée (Puissant)`    | `gemma3:4b` |
+| Multi-line prompt example | `Exemple de prompt multiligne`     | `gemma3:4b` |
+
+### v2.0.2 — 2026-02-13
+
+| Type   | Description                                                                                          |
+| :----- | :--------------------------------------------------------------------------------------------------- |
+| change | Hotkey : Remplacement de `F12` par `Ctrl+Clic Droit` (déclenchement au relâchement)                 |
+| feat   | Harmonisation locale : Utilisation exclusive de `gemma3:4b` pour tous les prompts                    |
+| feat   | Notification de succès : Nouveau GUI vert large et centré au lieu des TrayTip/ToolTips              |
+| fix    | PowerShell : Recherche de l'exécutable AHK v2 étendue aux lecteurs D: et E:                         |
+| fix    | PowerShell : Amélioration de la console (Log visible, gestion de $PSScriptRoot vide)                |
+| fix    | AHK v2 : Correction d'erreurs de syntaxe internes (triples guillemets, initialisation Map)          |
 
 ### v2.0.1 — 2026-02-13
 

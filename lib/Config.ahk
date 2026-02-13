@@ -69,11 +69,11 @@ class OllamaBackend {
         if (var.Has("error")) {
             return {
                 error: var["error"],
-                code: "Ollama Error"
+                code: "Erreur Ollama"
             }
         }
         return {
-            error: "Unknown error",
+            error: "Erreur inconnue",
             code: 0
         }
     }
@@ -140,7 +140,7 @@ class InputWindow {
 
         ; Add controls
         this.EditControl := this.guiObj.Add("Edit", "x20 y+5 w500 h250 Background0x212529")
-        this.SendButton := this.guiObj.Add("Button", "x240 y+10 w80", "Send")
+        this.SendButton := this.guiObj.Add("Button", "x240 y+10 w80", "Envoyer")
 
         ; Apply dark mode to title bar
         ; Reference: https://www.autohotkey.com/boards/viewtopic.php?p=422034#p422034
@@ -167,7 +167,7 @@ class InputWindow {
 
     validateInputAndHide(*) {
         if !this.EditControl.Value {
-            MsgBox "Please enter a message or close the window.", "No text entered", "IconX"
+            MsgBox "Veuillez entrer un message ou fermer la fenêtre.", "Aucun texte entré", "IconX"
             return false
         }
         this.guiObj.Hide
@@ -179,7 +179,9 @@ class InputWindow {
     }
 
     closeButtonAction(*) {
-        if this.inputWindowSkipConfirmation || (MsgBox("Close " this.guiObj.Title " window?", this.guiObj.Title, 308) = "Yes") {
+        response := MsgBox(Format('Fermer la fenêtre "{}" ?', this.guiObj.Title), this.guiObj.Title, 308)
+        yesResponses := Map("yes", true, "oui", true, "si", true, "sí", true, "sì", true, "ja", true, "sim", true, "да", true, "はい", true, "예", true, "是", true)
+        if (this.inputWindowSkipConfirmation || yesResponses.Has(StrLower(response))) {
             this.EditControl.Value := ""
             this.guiObj.Hide
             return

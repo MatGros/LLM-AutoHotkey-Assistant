@@ -96,6 +96,32 @@ https://github.com/user-attachments/assets/f960a7ef-9a6c-4217-8f86-44acfcea9122
 - Windows OS
 - [API key](https://openrouter.ai/settings/keys) from [OpenRouter.ai](https://openrouter.ai)
 
+#### Ensure .ahk files run with AutoHotkey v2 (important)
+
+This project requires AutoHotkey **v2**. If your system opens `.ahk` files with AutoHotkey v1 you will see parser errors such as "Missing space or operator before this".
+
+Options to fix:
+
+- GUI (recommended):
+  1. Open **AutoHotkey UX** (installed with AutoHotkey). Use *File associations* (or *Set associations*) and select **AutoHotkey v2** as the default handler for `.ahk` files.
+  2. Double‑click `LLM AutoHotkey Assistant.ahk` to run with AHK v2.
+
+- Command line (advanced): run the following as Administrator to associate .ahk with AHK v2:
+
+  - assoc .ahk=AutoHotkeyScript
+  - ftype AutoHotkeyScript="C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe" "%1" %*
+
+- Run manually with v2 without changing associations:
+
+  "C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe" "path\to\LLM AutoHotkey Assistant.ahk"
+
+  Or use the included helper PowerShell script (preferred):
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File run-with-ahk2.ps1
+  ```
+
+Note: the script already contains `#Requires AutoHotkey v2.0.18+` and will refuse to run under v1.
 ### Set up
 
 1. Run the `LLM AutoHotkey Assistant.ahk` script and press the `backtick` hotkey.

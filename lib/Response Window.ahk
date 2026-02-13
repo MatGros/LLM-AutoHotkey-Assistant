@@ -217,7 +217,7 @@ showResponseWindow(responseWindowTextContent, initialRequest, noActivate := fals
 ; Create Chat Input Window
 ; ----------------------------------------------------
 
-chatInputWindow := InputWindow("Send message to " requestParams["responseWindowTitle"], requestParams[
+chatInputWindow := InputWindow("Envoyer un message à " requestParams["responseWindowTitle"], requestParams[
     "skipConfirmation"])
 chatInputWindow.sendButtonAction(chatSendButtonAction)
 
