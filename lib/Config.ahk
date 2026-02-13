@@ -10,26 +10,29 @@
 DetectHiddenWindows true ; Enables detection of hidden windows for inter-process communication
 
 ; ----------------------------------------------------
-; OpenRouter
+; Ollama Backend
 ; ----------------------------------------------------
 
-class OpenRouter {
+class OllamaBackend {
+    ; Use {1} for URL, {2} for API Key (optional), {3} for Input File, {4} for Output File
     static cURLCommand :=
-        'cURL.exe -s -X POST https://openrouter.ai/api/v1/chat/completions '
-        . '-H "Authorization: Bearer {1}" '
-        . '-H "HTTP-Referer: https://github.com/kdalanon/LLM-AutoHotkey-Assistant" '
-        . '-H "X-Title: LLM AutoHotkey Assistant" '
+        'cURL.exe -s -X POST "{1}/api/chat" '
+        . '{2} '
         . '-H "Content-Type: application/json" '
-        . '-d @"{2}" '
-        . '-o "{3}"'
+        . '-d @"{3}" '
+        . '-o "{4}"'
 
-    __New(APIKey) {
+    __New(BaseURL, APIKey := "") {
+        this.BaseURL := RTrim(BaseURL, "/")
         this.APIKey := APIKey
     }
 
     createJSONRequest(APIModel, systemPrompt, userPrompt) {
         requestObj := {}
         requestObj.model := APIModel
+        ; Hack: AHK v2 stores "false" as 0 (integer), which serializes to 0.
+        ; Ollama strictly requires a boolean false. We use a placeholder string and replace it after.
+        requestObj.stream := "___FALSE___"  
         requestObj.messages := [{
             role: "system",
             content: systemPrompt
@@ -37,12 +40,25 @@ class OpenRouter {
             role: "user",
             content: userPrompt
         }]
-        return jsongo.Stringify(requestObj)
+        json := jsongo.Stringify(requestObj)
+        return StrReplace(json, '"___FALSE___"', 'false')
     }
 
     extractJSONResponse(var) {
-        response := var.Get("choices")[1].Get("message").Get("content")
-        model := var.Get("model")
+        ; Ollama returns { "message": { "role": "assistant", "content": "..." }, "done": true, ... }
+        if (var.Has("message") && var["message"].Has("content")) {
+            response := var["message"]["content"]
+        } else if (var.Has("response")) {
+             ; Fallback for /api/generate endpoint if used
+            response := var["response"]
+        } else if (var.Has("choices") && var["choices"][1].Has("message") && var["choices"][1]["message"].Has("content")) {
+             ; Fallback for OpenAI compatible endpoint
+            response := var["choices"][1]["message"]["content"]
+        } else {
+            response := ""
+        }
+        
+        model := var.Has("model") ? var["model"] : "unknown"
         return {
             response: response,
             model: model
@@ -50,11 +66,15 @@ class OpenRouter {
     }
 
     extractErrorResponse(var) {
-        error := var.Get("error").Get("message")
-        code := var.Get("error").Get("code")
+        if (var.Has("error")) {
+            return {
+                error: var["error"],
+                code: "Ollama Error"
+            }
+        }
         return {
-            error: error,
-            code: code,
+            error: "Unknown error",
+            code: 0
         }
     }
 
@@ -70,27 +90,35 @@ class OpenRouter {
 
     getMessages(obj) {
         messages := []
-        for i in obj["messages"] {
-            messages.Push({
-                role: i["role"],
-                content: i["content"]
-            })
+        if (obj.Has("messages")) {
+            for i in obj["messages"] {
+                messages.Push({
+                    role: i["role"],
+                    content: i["content"]
+                })
+            }
         }
         return messages
     }
 
     removeLastAssistantMessage(&chatHistoryJSONRequest) {
         obj := jsongo.Parse(chatHistoryJSONRequest)
-        messagesArray := obj["messages"]
-        lastIndex := messagesArray.Length
-        if (messagesArray[lastIndex]["role"] = "assistant") {
-            messagesArray.RemoveAt(lastIndex)
+        if (obj.Has("messages")) {
+            messagesArray := obj["messages"]
+            lastIndex := messagesArray.Length
+            if (lastIndex > 0 && messagesArray[lastIndex]["role"] = "assistant") {
+                messagesArray.RemoveAt(lastIndex)
+            }
+            chatHistoryJSONRequest := jsongo.Stringify(obj)
         }
-        chatHistoryJSONRequest := jsongo.Stringify(obj)
     }
 
     buildcURLCommand(chatHistoryJSONRequestFile, cURLOutputFile) {
-        return Format(OpenRouter.cURLCommand, this.APIKey, chatHistoryJSONRequestFile, cURLOutputFile)
+        authHeader := ""
+        if (this.APIKey != "") {
+            authHeader := '-H "Authorization: Bearer ' . this.APIKey . '"'
+        }
+        return Format(OllamaBackend.cURLCommand, this.BaseURL, authHeader, chatHistoryJSONRequestFile, cURLOutputFile)
     }
 }
 

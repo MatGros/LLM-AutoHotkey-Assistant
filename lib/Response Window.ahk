@@ -57,13 +57,13 @@ startLoadingCursor(true)
 ; Change icon based on providerName
 ; ----------------------------------------------------
 
-TraySetIcon(FileExist(icon := "..\icons\" requestParams["providerName"] ".ico") ? icon : "..\icons\IconOn.ico")
+; TraySetIcon(FileExist(icon := "..\icons\" requestParams["providerName"] ".ico") ? icon : "..\icons\IconOn.ico")
 
 ; ----------------------------------------------------
-; Create new instance of OpenRouter class
+; Create new instance of OllamaBackend class
 ; ----------------------------------------------------
 
-router := OpenRouter(APIKey)
+router := OllamaBackend(requestParams["baseURL"], requestParams.Has("APIKey") ? requestParams["APIKey"] : "")
 
 ; ----------------------------------------------------
 ; Create Response Window
@@ -321,8 +321,8 @@ sendRequestToLLM(&chatHistoryJSONRequest, initialRequest := false) {
             . "`n`n---`n`n"
         errorCodes := {
             400: "You may have specified an invalid API model. See [this guide](https://github.com/kdalanon/LLM-AutoHotkey-Assistant/blob/main/README.md#apimodels) on how to get the correct API models.",
-            401: "Authentication failed. Your API key or session might be invalid or expired. Check your keys [here](https://openrouter.ai/settings/keys), re-add it to the app, and try again.",
-            402: "Insufficient funds. Click [here](https://openrouter.ai/credits) to check your available credits.",
+            401: "Authentication failed. Your API key may be invalid or expired. Re-check your Ollama configuration and try again.",
+            402: "Request rejected — check your Ollama server configuration.",
             403: "Content flagged as inappropriate. Your input triggered content moderation and was rejected. Please revise your request and try again with different content.",
             408: "Request timed out. The API request took too long to process. This might be due to network issues or server overload.",
             429: "You've hit the rate limit of **" requestParams["singleAPIModelName"] "**. Try again after some time.",
@@ -330,7 +330,8 @@ sendRequestToLLM(&chatHistoryJSONRequest, initialRequest := false) {
             503: "No suitable model available. There are no providers currently meeting your request requirements. Please try again later or adjust your routing settings."
         }
 
-        responseFromLLM .= errorCodes.%JSONResponseFromLLM.code%
+        code := JSONResponseFromLLM.code
+        responseFromLLM .= (errorCodes.HasKey(code) ? errorCodes[code] : "API returned an unexpected error (" code "). `n`n" JSONResponseFromLLM.error)
         showResponseWindow(responseFromLLM, initialRequest)
         postWebMessage("responseWindowButtonsEnabled", true)
         startLoadingCursor(false)

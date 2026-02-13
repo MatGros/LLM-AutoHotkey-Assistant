@@ -1,0 +1,45 @@
+# Local Configuration & Secrets
+# These should be in %AppData% anyway, but ignore local copies
+api_key.txt
+ollama_config.json
+.env
+
+# Compiled Executables
+*.exe
+*.bin
+*.pdb
+
+# Logs & Temporary Files
+*.log
+*.tmp
+llm_test_*.json
+temp/
+tmp/
+
+# Editor & IDE Settings
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# AutoHotkey specific
+Ahk2Exe/
+
+# Operating System Files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Backups & Copies
+* copy.ahk
+* backup.ahk
+backup/
+backups/
+Archive Backup*/
