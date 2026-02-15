@@ -1,0 +1,58 @@
+# Local Configuration & Secrets
+api_key.txt
+ollama_config.json
+.env
+
+# Compiled Executables
+*.exe
+*.bin
+*.pdb
+
+# Logs & Temporary Files
+*.log
+*.tmp
+*.bak
+*.old
+llm_test_*.json
+temp/
+tmp/
+
+# Editor & IDE Settings
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# AutoHotkey specific
+Ahk2Exe/
+
+# Operating System Files
+Thumbs.db
+Desktop.ini
+.DS_Store
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Archives
+*.zip
+*.rar
+*.7z
+
+# Node/Python (Future proofing)
+node_modules/
+__pycache__/
+
+# Backups & Copies
+* copy.ahk
+* backup.ahk
+backup/
+backups/
+Archive Backup*/

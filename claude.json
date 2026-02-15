@@ -1,0 +1,54 @@
+{
+  "name": "LLM-AutoHotkey-Assistant",
+  "description": "AutoHotkey Assistant with LLM Integration",
+  "version": "1.0.0",
+  "permissions": {
+    "deleteFiles": {
+      "allowed": false,
+      "allowedPaths": [],
+      "deniedPaths": ["../**", "../../**"]
+    },
+    "modifyFiles": {
+      "allowed": true,
+      "allowedPaths": [
+        "D:\\MGS\\DEV\\LLM-AutoHotkey-Assistant/**"
+      ],
+      "deniedPaths": [
+        "D:\\**",
+        "C:\\Windows\\**",
+        "C:\\Program Files\\**",
+        "../**"
+      ]
+    },
+    "executeCommands": {
+      "allowed": true,
+      "deniedPatterns": [
+        "rm -rf",
+        "del /s",
+        "rmdir /s",
+        "format",
+        "cipher /w"
+      ]
+    }
+  },
+  "projectScope": {
+    "root": "D:\\MGS\\DEV\\LLM-AutoHotkey-Assistant",
+    "protectedDirs": [
+      "..",
+      "../../",
+      "C:\\",
+      "D:\\MGS\\DEV\\",
+      "D:\\MGS\\"
+    ]
+  },
+  "safety": {
+    "blockFileDelete": true,
+    "blockFileModifyOutsideProject": true,
+    "confirmBeforeDangerousOps": true,
+    "requireUserConfirmation": {
+      "deleteOperations": true,
+      "modifyExternalFiles": true,
+      "runScripts": false
+    }
+  }
+}
